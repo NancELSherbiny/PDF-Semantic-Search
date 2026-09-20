@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Local model cache / vector store data (created at runtime)
+.cache/
+qdrant_storage/
+
+# Uploaded / sample PDFs — keep the folder, ignore its contents
+data/*.pdf
+!data/.gitkeep
+
+# OS noise
+.DS_Store

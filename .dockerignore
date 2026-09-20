@@ -1,0 +1,14 @@
+# Keep the Docker build context small and clean. Anything here is NOT sent to
+# the Docker daemon, so builds are faster and images don't leak local cruft.
+.git
+.gitignore
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/*.pdf
+helpers/
+tests/
+README.md
+*.md

@@ -1,0 +1,17 @@
+# Runtime dependencies (installed into the Docker image).
+
+# Web framework + ASGI server (uvicorn[standard] gives the /docs UI the tests probe).
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+python-multipart==0.0.*        # multipart form parsing for /ingest/
+pydantic-settings==2.*         # typed settings loaded from environment variables
+anyio==4.*                     # run blocking work off the event loop
+
+# PDF text extraction (pure-Python).
+pypdf==5.*
+
+# Embeddings via fastembed (ONNX runtime — lightweight, no torch).
+fastembed>=0.4,<1
+
+# Vector database client.
+qdrant-client==1.*

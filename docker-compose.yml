@@ -1,0 +1,25 @@
+# Two services on one network: the API (built from our Dockerfile) and Qdrant.
+# All app configuration is passed via environment variables (see .env.example).
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - qdrant
+    environment:
+      LOG_LEVEL: INFO
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      CACHE_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
