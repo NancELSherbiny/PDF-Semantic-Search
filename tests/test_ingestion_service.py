@@ -1,5 +1,7 @@
 import anyio
+import pytest
 
+from app.core.exceptions import BadRequestError
 from app.services.ingestion_service import IngestionService
 
 
@@ -60,9 +62,10 @@ def test_ingest_document_returns_chunk_count():
     assert store.upserts == [("a.pdf", 3)]
 
 
-def test_ingest_empty_document_stores_nothing():
+def test_ingest_empty_document_is_rejected():
     store = FakeStore()
-    assert _service(store, FakeCache()).ingest_document("empty.pdf", b"") == 0
+    with pytest.raises(BadRequestError):
+        _service(store, FakeCache()).ingest_document("empty.pdf", b"")
     assert store.upserts == []
 
 

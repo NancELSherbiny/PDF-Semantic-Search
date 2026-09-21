@@ -13,6 +13,10 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       CACHE_ENABLED: "false"
+    volumes:
+      # Mount host ./data into the container so directory ingestion (path=/data)
+      # can see PDFs placed there.
+      - ./data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s
@@ -20,6 +24,6 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.19.1   # pinned for reproducible builds
     ports:
       - "6333:6333"

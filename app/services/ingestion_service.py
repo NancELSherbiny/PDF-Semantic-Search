@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import anyio
 
+from app.core.exceptions import BadRequestError
 from app.core.logging import get_logger
 from app.infrastructure.cache.cache import Cache
 from app.infrastructure.vector_store.base import VectorStore
@@ -39,8 +40,9 @@ class IngestionService:
         text = self._extractor.extract(data)
         chunks = self._chunker.chunk(text)
         if not chunks:
-            logger.warning("No text extracted from '%s'; nothing to index", filename)
-            return 0
+            # Empty/garbage file yielded no text — reject instead of reporting
+            # success and polluting the index.
+            raise BadRequestError(f"No extractable text found in '{filename}'.")
         vectors = self._embedder.embed(chunks)
         self._store.upsert(filename, chunks, vectors)
         logger.info("Ingested '%s' -> %d chunks", filename, len(chunks))

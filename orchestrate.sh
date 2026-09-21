@@ -18,7 +18,9 @@ ACTION="$2"
 
 case "$ACTION" in
     start)
-        docker compose up --build -d
+        # --wait blocks until services are healthy, so the command doesn't
+        # return before the API can actually accept traffic.
+        docker compose up --build -d --wait
         ;;
     terminate)
         docker compose down -v --remove-orphans

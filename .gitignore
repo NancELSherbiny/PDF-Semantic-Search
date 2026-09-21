@@ -9,9 +9,10 @@ venv/
 .cache/
 qdrant_storage/
 
-# Uploaded / sample PDFs — keep the folder, ignore its contents
+# Uploaded / sample PDFs — keep the folder + the committed sample, ignore the rest
 data/*.pdf
 !data/.gitkeep
+!data/sample.pdf
 
 # OS noise
 .DS_Store
