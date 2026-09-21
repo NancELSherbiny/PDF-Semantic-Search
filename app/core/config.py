@@ -23,12 +23,14 @@ class Settings(BaseSettings):
 
     # Embedding
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
-    embedding_dim: int = 384
     normalize_embeddings: bool = True
 
     # Chunking
     chunk_size: int = 180
     chunk_overlap: int = 30
+
+    # Ingestion
+    ingest_base_dir: str = "/data"  # directory-path ingestion is restricted to this base
 
     # Vector store (Qdrant)
     qdrant_host: str = "qdrant"
