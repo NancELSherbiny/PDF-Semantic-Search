@@ -1,29 +1,55 @@
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.core.config import Settings
 from app.infrastructure.vector_store.qdrant_store import QdrantVectorStore
+
+
+def _existing_collection(client, size):
+    client.collection_exists.return_value = True
+    client.get_collection.return_value = MagicMock(
+        config=MagicMock(params=MagicMock(vectors=MagicMock(size=size)))
+    )
 
 
 def test_ensure_ready_creates_collection_when_missing():
     client = MagicMock()
     client.collection_exists.return_value = False
-    QdrantVectorStore(Settings(), client=client).ensure_ready()
+    QdrantVectorStore(Settings(), client=client).ensure_ready(384)
     client.create_collection.assert_called_once()
 
 
-def test_ensure_ready_skips_when_collection_exists():
+def test_ensure_ready_ok_when_dimension_matches():
     client = MagicMock()
-    client.collection_exists.return_value = True
-    QdrantVectorStore(Settings(), client=client).ensure_ready()
+    _existing_collection(client, 384)
+    QdrantVectorStore(Settings(), client=client).ensure_ready(384)
     client.create_collection.assert_not_called()
 
 
-def test_upsert_replaces_existing_document_then_inserts():
+def test_ensure_ready_raises_on_dimension_mismatch():
+    client = MagicMock()
+    _existing_collection(client, 768)
+    with pytest.raises(RuntimeError):
+        QdrantVectorStore(Settings(), client=client).ensure_ready(384)
+
+
+def test_upsert_returns_chunk_count():
     client = MagicMock()
     store = QdrantVectorStore(Settings(), client=client)
     assert store.upsert("a.pdf", ["c1", "c2"], [[0.1], [0.2]]) == 2
-    client.delete.assert_called_once()  # existing chunks for the doc removed first
     client.upsert.assert_called_once()
+
+
+def test_upsert_uses_deterministic_ids_for_same_document():
+    client = MagicMock()
+    store = QdrantVectorStore(Settings(), client=client)
+    store.upsert("a.pdf", ["c1", "c2"], [[0.1], [0.2]])
+    ids1 = [p.id for p in client.upsert.call_args.kwargs["points"]]
+    store.upsert("a.pdf", ["c1", "c2"], [[0.1], [0.2]])
+    ids2 = [p.id for p in client.upsert.call_args.kwargs["points"]]
+    assert ids1 == ids2         # re-ingest overwrites the same points (no duplicates)
+    assert len(set(ids1)) == 2  # one distinct id per chunk index
 
 
 def test_count_returns_number_of_chunks():

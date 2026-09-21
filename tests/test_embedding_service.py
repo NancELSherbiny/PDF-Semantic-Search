@@ -17,3 +17,8 @@ def test_embed_returns_one_vector_per_text():
     assert len(out) == 2
     assert out[0] == pytest.approx([0.1, 0.2, 0.3])
     assert isinstance(out, list) and isinstance(out[0], list)
+
+
+def test_dimension_is_derived_from_model():
+    svc = EmbeddingService(Settings(), model=FakeModel())
+    assert svc.dimension == 3

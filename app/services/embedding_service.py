@@ -26,6 +26,9 @@ class EmbeddingService:
             logger.info("Loading embedding model: %s", settings.embedding_model)
             model = TextEmbedding(model_name=settings.embedding_model)
         self._model = model
+        # Derive the true dimension from the model so it can't silently disagree
+        # with a separately-configured value.
+        self.dimension = len(self.embed(["dimension probe"])[0])
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts; returns one vector per input.

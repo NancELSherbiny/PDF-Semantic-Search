@@ -9,8 +9,9 @@ class VectorStore(ABC):
     """A store of chunk embeddings that supports upsert and similarity search."""
 
     @abstractmethod
-    def ensure_ready(self) -> None:
-        """Create the underlying collection/index if it does not exist yet."""
+    def ensure_ready(self, dimension: int) -> None:
+        """Create the collection sized for `dimension`, or fail if an existing
+        collection has a different dimension."""
 
     @abstractmethod
     def count(self) -> int:

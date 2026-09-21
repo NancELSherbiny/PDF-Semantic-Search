@@ -38,12 +38,16 @@ def _build_cache(settings: Settings) -> Cache:
     return NoOpCache()
 
 
-async def _wait_for_vector_store(store: QdrantVectorStore, retries: int = 20, delay: float = 1.0) -> None:
+async def _wait_for_vector_store(
+    store: QdrantVectorStore, dimension: int, retries: int = 20, delay: float = 1.0
+) -> None:
     # The DB container may still be booting when the app starts; retry briefly.
     for attempt in range(1, retries + 1):
         try:
-            store.ensure_ready()
+            store.ensure_ready(dimension)
             return
+        except RuntimeError:
+            raise  # dimension mismatch — fail clearly instead of retrying
         except Exception as exc:
             logger.warning("Vector store not ready (attempt %d/%d): %s", attempt, retries, exc)
             await anyio.sleep(delay)
@@ -60,7 +64,7 @@ async def lifespan(app: FastAPI):
     chunker = ChunkingService(settings)
     embedder = EmbeddingService(settings)  # loads the model once
     vector_store = QdrantVectorStore(settings)
-    await _wait_for_vector_store(vector_store)
+    await _wait_for_vector_store(vector_store, embedder.dimension)
     cache = _build_cache(settings)
 
     app.state.ingestion_service = IngestionService(extractor, chunker, embedder, vector_store, cache)
