@@ -35,26 +35,36 @@ class IngestionService:
         self._store = vector_store
         self._cache = cache
 
-    def ingest_document(self, filename: str, data: bytes) -> int:
-        """Run the pipeline for one document. Blocking; called via a worker thread."""
-        text = self._extractor.extract(data)
-        chunks = self._chunker.chunk(text)
+    def _prepare(self, filename: str, data: bytes) -> list[str]:
+        """Extract and chunk one document, rejecting it if it has no usable text.
+        Writes nothing."""
+        chunks = self._chunker.chunk(self._extractor.extract(data))
         if not chunks:
-            # Empty/garbage file yielded no text — reject instead of reporting
-            # success and polluting the index.
+            logger.warning("Rejected '%s': no extractable text", filename)
             raise BadRequestError(f"No extractable text found in '{filename}'.")
-        vectors = self._embedder.embed(chunks)
-        self._store.upsert(filename, chunks, vectors)
-        logger.info("Ingested '%s' -> %d chunks", filename, len(chunks))
-        return len(chunks)
+        return chunks
+
+    def _index(self, prepared: list[tuple[str, list[str]]]) -> None:
+        # Embed everything before the first write, so a model failure can't leave
+        # the request half-indexed.
+        embedded = [(name, chunks, self._embedder.embed(chunks)) for name, chunks in prepared]
+        for name, chunks, vectors in embedded:
+            self._store.upsert(name, chunks, vectors)
+            logger.info("Ingested '%s' -> %d chunks", name, len(chunks))
 
     async def ingest_documents(self, documents: list[tuple[str, bytes]]) -> list[str]:
-        """Ingest documents off the event loop, then invalidate the search cache."""
+        """
+        All-or-nothing per request: every document is extracted and validated
+        before anything is written, so one bad file means nothing from the
+        request is indexed. Blocking work runs off the event loop.
+        """
         logger.info("Ingestion started: %d document(s)", len(documents))
-        processed: list[str] = []
+        prepared: list[tuple[str, list[str]]] = []
         for filename, data in documents:
-            await anyio.to_thread.run_sync(self.ingest_document, filename, data)
-            processed.append(filename)
-        await self._cache.clear()  # new documents can change search results
-        logger.info("Ingestion completed: %d document(s)", len(processed))
-        return processed
+            chunks = await anyio.to_thread.run_sync(self._prepare, filename, data)
+            prepared.append((filename, chunks))
+
+        await anyio.to_thread.run_sync(self._index, prepared)
+        await self._cache.clear()  # only after a successful index
+        logger.info("Ingestion completed: %d document(s)", len(prepared))
+        return [filename for filename, _ in prepared]

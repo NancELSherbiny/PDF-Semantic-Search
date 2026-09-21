@@ -56,21 +56,34 @@ def _service(store, cache):
     return IngestionService(FakeExtractor(), FakeChunker(), FakeEmbedder(), store, cache)
 
 
-def test_ingest_document_returns_chunk_count():
+def _ingest(service, documents):
+    return anyio.run(service.ingest_documents, documents)
+
+
+def test_single_document_is_indexed():
     store = FakeStore()
-    assert _service(store, FakeCache()).ingest_document("a.pdf", b"hello world foo") == 3
+    assert _ingest(_service(store, FakeCache()), [("a.pdf", b"hello world foo")]) == ["a.pdf"]
     assert store.upserts == [("a.pdf", 3)]
 
 
 def test_ingest_empty_document_is_rejected():
     store = FakeStore()
     with pytest.raises(BadRequestError):
-        _service(store, FakeCache()).ingest_document("empty.pdf", b"")
+        _ingest(_service(store, FakeCache()), [("empty.pdf", b"")])
     assert store.upserts == []
 
 
-def test_ingest_documents_invalidates_cache():
-    cache = FakeCache()
-    files = anyio.run(_service(FakeStore(), cache).ingest_documents, [("a.pdf", b"hello world")])
-    assert files == ["a.pdf"]
+def test_one_invalid_document_means_nothing_is_indexed():
+    store, cache = FakeStore(), FakeCache()
+    with pytest.raises(BadRequestError):
+        _ingest(_service(store, cache), [("good.pdf", b"hello world"), ("empty.pdf", b"")])
+    assert store.upserts == []  # good.pdf must NOT have been indexed
+    assert cache.cleared == 0   # nothing changed, so the cache is left alone
+
+
+def test_all_valid_documents_are_indexed():
+    store, cache = FakeStore(), FakeCache()
+    files = _ingest(_service(store, cache), [("good.pdf", b"hello world"), ("good2.pdf", b"more text here")])
+    assert files == ["good.pdf", "good2.pdf"]
+    assert store.upserts == [("good.pdf", 2), ("good2.pdf", 3)]
     assert cache.cleared == 1
