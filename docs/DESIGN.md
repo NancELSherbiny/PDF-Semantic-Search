@@ -57,7 +57,7 @@ sequenceDiagram
         I->>E: embed(chunks)
         E-->>I: vectors
         I->>V: upsert(name, chunks, vectors)
-        V->>Q: delete-by-document, then upsert (idempotent)
+        V->>Q: upsert with deterministic IDs (re-ingest overwrites, idempotent)
     end
     I->>Ca: clear() (invalidate stale results)
     I-->>R: filenames
@@ -256,8 +256,9 @@ See **Cache design** below for how it's disabled and how it scales later.
 
 ## Reliability refinements (found while testing)
 
-- **Idempotent ingest** — `upsert` deletes existing chunks for a document before
-  inserting, so re-ingesting a file replaces rather than duplicates.
+- **Idempotent ingest** — point IDs are deterministic (document + chunk index), so
+  re-ingesting a file overwrites the same points instead of duplicating them,
+  even under concurrent uploads.
 - **Score threshold** (`SCORE_THRESHOLD`, default `0.0`) — Qdrant filters out
   chunks below the score server-side, dropping unrelated/negative-score noise.
 - **`top_k` validation** — an *explicit* `top_k` greater than the number of stored
@@ -276,18 +277,16 @@ Things intentionally **not** built, and why:
   an unused dependency; the seam is documented.
 - **No async job queue / status endpoint** — the contract is synchronous and
   documents are small. This is the first thing to add when scaling.
-- **No Qdrant persistence volume** — the graded flow is start → ingest → search →
-  terminate, and `terminate` must wipe cleanly (`down -v`). A named volume is a
-  one-line addition if persistence is wanted.
+- **Persistence is scoped to `docker compose down`/`up`** — Qdrant uses the named
+  volume `qdrant_storage`, but `orchestrate.sh --action terminate` still removes
+  it (`down -v`) because the brief requires a clean teardown.
 - **No OCR** — scanned/image-only PDFs won't yield text (extraction returns
   empty). OCR (Tesseract) would be the extension.
 - **No auth / rate limiting / metrics** — out of scope for the assessment.
-- **`EMBEDDING_DIM` is configured separately** and must match the chosen model;
-  it could be derived from the model at startup instead.
 - **In-memory cache is per-process** — fine for a single replica; use Redis for
   multiple replicas.
 
-**Scaling path, in order:** async ingestion (job queue) → persistence volume →
+**Scaling path, in order:** async ingestion (job queue) →
 enable caching (in-memory, then Redis for multi-replica) → a stronger embedding
 model via `EMBEDDING_MODEL` → horizontal scaling of the app behind a load
 balancer with Qdrant as the shared store.

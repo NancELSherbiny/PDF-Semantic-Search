@@ -61,6 +61,11 @@ Docker Compose runs two services on a shared private network:
 The app reaches the database at the hostname `qdrant` (the compose service name)
 — no IPs, no manual wiring.
 
+Qdrant's data lives in the named volume `qdrant_storage`, so the index survives
+`docker compose down` / `up`. `./orchestrate.sh --action terminate` removes it
+(`down -v`) for a clean teardown. The separate `./data:/data` mount is only for
+source PDFs used by directory ingestion.
+
 ---
 
 ## 3. Endpoints
@@ -72,19 +77,25 @@ Liveness probe. → `{"status": "ok"}`
 
 ### `POST /ingest/`
 Ingest one or more PDFs. `multipart/form-data`:
-- `input` — one or more PDF files (repeat the field for multiple).
-- `path` — *(optional)* a server-side directory of PDFs (used only when no files
-  are uploaded).
+- `input` — one or more PDF files (repeat the field for multiple), **or** a
+  directory-path string such as `/data` (must be inside `INGEST_BASE_DIR`).
+- `path` — *(optional)* alias for the directory-path form (used only when no
+  files are uploaded).
 
 ```bash
 curl -X POST http://localhost:8000/ingest/ \
   -F "input=@data/a.pdf" -F "input=@data/b.pdf"
+
+# directory form (the ./data folder is mounted at /data)
+curl -X POST http://localhost:8000/ingest/ -F "input=/data"
 ```
 **200** →
 ```json
 { "message": "Successfully ingested 2 PDF document(s).", "files": ["a.pdf", "b.pdf"] }
 ```
-**400** → non-PDF file, no input, or invalid path. Re-ingesting a file
+**400** → non-PDF file, a file with no readable text (empty or binary garbage),
+no input, or a path outside the base dir. Requests are **all-or-nothing**: if any
+file is rejected, nothing from that request is indexed. Re-ingesting a file
 **replaces** its previous chunks (idempotent — no duplicates).
 
 ### `POST /search/`
@@ -185,12 +196,12 @@ no code change is needed to reconfigure. Defaults run the assessment as-is.
 | Variable | Default | Purpose |
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | Logging verbosity |
-| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (run via fastembed) |
-| `EMBEDDING_DIM` | `384` | Vector size (must match the model) |
+| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Embedding model (run via fastembed; vector size is derived from it) |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `180` / `30` | Words per chunk / overlap |
 | `QDRANT_HOST` / `QDRANT_PORT` | `qdrant` / `6333` | Vector DB location |
 | `QDRANT_COLLECTION` | `pdf_chunks` | Collection name |
 | `DISTANCE_METRIC` | `cosine` | Similarity metric |
+| `INGEST_BASE_DIR` | `/data` | Directory-path ingestion is restricted to this base |
 | `TOP_K` | `5` | Default results per search |
 | `SCORE_THRESHOLD` | `0.0` | Drop results below this score (0.0 = drop unrelated/negatives) |
 | `CACHE_ENABLED` | `false` | Enable search-result caching |
@@ -201,18 +212,23 @@ no code change is needed to reconfigure. Defaults run the assessment as-is.
 
 ## 6. Testing
 
-Unit tests mock the external dependencies (Qdrant, the model), so they need no
-running services or torch:
+The unit tests mock the external dependencies (Qdrant, the embedding model), so
+they need **no running services and no torch**, and run on **Python 3.9+**:
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
+python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 pytest
 ```
 
-Coverage: config, chunking, extraction (incl. plain-text fallback), embedding,
-cache (TTL/eviction/clear), vector store, search & ingestion services, and API
-validation/error paths.
+Expect `47 passed`. (`pytest.ini` sets `pythonpath = .`, so the bare `pytest`
+command resolves the `app` package from the repo root.)
+
+Coverage: configuration, chunking, PDF extraction (incl. the plain-text
+fallback), embedding + dimension derivation, cache (TTL / eviction / clear),
+vector store (deterministic point IDs, dimension-mismatch guard), search &
+ingestion services (empty-input rejection, `top_k` validation), and the API
+validation/error paths (empty query, non-PDF, path outside the base dir).
 
 ---
 
